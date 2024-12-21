@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+      "lib": ["ES6", "DOM"],      // Include only standard libraries
+      "target": "ES6",            // Target ES6
+      "outDir": "www/dist",         // Where compiled JS will go
+      "rootDir": "./www",         // Where your TS source files are
+      "strict": true,             // Enable strict type-checking
+      "esModuleInterop": true,    // Allow module compatibility
+      "skipLibCheck": true        // Skip checking types of imported libraries
+    },
+    "include": ["www/**/*.ts"],    // Include your TypeScript files
+    "exclude": ["node_modules", "www/dist", "**/*.d.ts"] // Exclude definitions & compiled files
+  }
+  
