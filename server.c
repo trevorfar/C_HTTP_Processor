@@ -1,5 +1,6 @@
 #include <winsock2.h>
 #include <stdio.h>
+#include <time.h>
 #include "server.h"
 
 #pragma comment(lib, "ws2_32.lib")
@@ -40,6 +41,7 @@ void send_error_response(SOCKET client_socket, const char *message) {
 }
 
 int main() {
+    clock_t begin = clock();
     WSADATA wsa;
     SOCKET server_fd, new_socket;
     struct sockaddr_in address;
@@ -79,6 +81,9 @@ int main() {
     }
 
     printf("Server is running on port %d...\n", PORT);
+    clock_t end = clock();
+    double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+    printf("Took %lfs to compile+run ", time_spent);
 
     while ((new_socket = accept(server_fd, (struct sockaddr *)&address, &addrlen)) != INVALID_SOCKET) {
         char buffer[1024] = {0};
@@ -94,5 +99,6 @@ int main() {
 
     closesocket(server_fd);
     WSACleanup();
+    
     return 0;
 }

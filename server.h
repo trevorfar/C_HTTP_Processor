@@ -46,6 +46,16 @@ char *custom_strndup(const char *str, size_t n) {
     return dup;
 }
 
+const char *next_delimiter(const char *str, const char *delimiters){
+    const char *nearest = NULL;
+    for(const char *d = delimiters; *d; d++){
+        const char *pos = strchr(str, *d);
+        if (pos && (!nearest || pos < nearest)) {
+            nearest = pos;
+        }
+    }
+    return nearest;
+}
 
 void parse_dynamic_params(const char *url, DynamicParams *params) {
     params->count = 0;
@@ -55,19 +65,20 @@ void parse_dynamic_params(const char *url, DynamicParams *params) {
         return;
     }
     query++;  
+    const char delims[] = "&/";
 
     while (*query && params->count < 10) {
         printf("Current query segment: %s\n", query);
 
         char *sep = strchr(query, '=');
-        char *next = strchr(query, '&');
+        const char *next = next_delimiter(query, delims);
 
         printf("query=%s, sep=%s, next=%s\n",
                query ? query : "NULL",
                sep ? sep : "NULL",
                next ? next : "NULL");
 
-        if (!sep) {
+        if (!sep || (next && sep > next)) {
             printf("No '=' found, skipping to next segment.\n");
             break;
         }
@@ -95,8 +106,8 @@ void parse_dynamic_params(const char *url, DynamicParams *params) {
             break; 
         }
 
-        if (query && (*query == '&' || *query == '/')) {
-            query++;
+        while (*query && strchr(delims, *query)) {
+            query++; 
         }
     }
     for (int j = 0; j < params->count; j++) {
