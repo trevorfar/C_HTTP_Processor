@@ -2,8 +2,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <ctype.h>
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 8192
 #define MAX_PATH_LEN 256
 #define MAX_PARAM_LEN 256
 
@@ -47,9 +48,7 @@ char *custom_strndup(const char *str, size_t n) {
 
 
 void parse_dynamic_params(const char *url, DynamicParams *params) {
-    int i = 0;
     params->count = 0;
-
     const char *query = strchr(url, '?');
     if (!query) {
         printf("No query string found in URL.\n");
@@ -57,8 +56,7 @@ void parse_dynamic_params(const char *url, DynamicParams *params) {
     }
     query++;  
 
-    int max_iterations = 20; 
-    while (*query && params->count < 10 && max_iterations--) {
+    while (*query && params->count < 10) {
         printf("Current query segment: %s\n", query);
 
         char *sep = strchr(query, '=');
@@ -101,12 +99,6 @@ void parse_dynamic_params(const char *url, DynamicParams *params) {
             query++;
         }
     }
-
-    if (max_iterations == 0) {
-        printf("Loop terminated due to safety limit.\n");
-    }
-
-    printf("Final count of parameters: %d\n", params->count);
     for (int j = 0; j < params->count; j++) {
         printf("Param %d: Key=%s, Value=%s\n", j, params->params[j].key, params->params[j].value);
     }
@@ -115,9 +107,8 @@ void parse_dynamic_params(const char *url, DynamicParams *params) {
 
 
 char *escape_html(const char *input) {
-    // Estimate maximum size needed for the escaped string
     size_t len = strlen(input);
-    char *escaped = malloc(len * 5 + 1); // Worst case: every character needs to be escaped
+    char *escaped = malloc(len * 5 + 1); // worst case 
     if (!escaped) return NULL;
 
     char *out = escaped;
@@ -162,6 +153,34 @@ char *replace_placeholders(const char *template, const DynamicParams *params) {
     return result;
 }
 
+void remove_extra_whitespace(char *str) {
+    char *write_ptr = str;
+    char prev_char = '\0';
+
+    for (char *read_ptr = str; *read_ptr; read_ptr++) {
+        if (isspace(*read_ptr)) {
+            if (prev_char && !isspace(prev_char)) {
+                *write_ptr++ = ' ';
+            }
+        } else {
+            *write_ptr++ = *read_ptr;
+        }
+        prev_char = *read_ptr;
+    }
+    *write_ptr = '\0'; 
+}
+
+void sanitize_content(char *str) {
+    char *write_ptr = str;
+    for (char *read_ptr = str; *read_ptr; ++read_ptr) {
+        if (*read_ptr >= 32 && *read_ptr <= 126) {  
+            *write_ptr++ = *read_ptr;
+        }
+    }
+    *write_ptr = '\0';
+}
+
+
 void serve_dynamic_html(const char *file_path, SOCKET client_socket, const DynamicParams *params) {
     FILE *file = fopen(file_path, "r");
     if (!file) {
@@ -182,6 +201,9 @@ void serve_dynamic_html(const char *file_path, SOCKET client_socket, const Dynam
     fread(template, 1, file_size, file);
     template[file_size] = '\0';
     fclose(file);
+
+    remove_extra_whitespace(template);
+    sanitize_content(template);
 
     const char *response = replace_placeholders(template, params);
     free(template);
@@ -207,10 +229,23 @@ void parse_request(const char *request, char *method, char *url) {
 }
 
 void build_file_path(const char *url, char *file_path) {
+    if(!url || !file_path){
+        fprintf(stderr, "No url or file_path provided !");
+        return;
+    }
+
     const char *path_end = strchr(url, '?');
-    char *temp = custom_strndup(url, path_end - url);
-    snprintf(file_path, MAX_PATH_LEN, "./www%s", temp);
-    free(temp);
+    if(path_end){
+        char *temp = custom_strndup(url, path_end - url);
+        snprintf(file_path, MAX_PATH_LEN, "./www%s", temp);
+        temp ? free(temp) : NULL;
+    }else {
+        if(strcmp(url, "/") == 0){
+            snprintf(file_path, MAX_PATH_LEN, "./www%s", "/index.html");
+        }else {
+            snprintf(file_path, MAX_PATH_LEN, "./www%s", url);
+        }
+    }
 }
 
 

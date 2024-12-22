@@ -12,11 +12,9 @@ void handle_request(const char *url, SOCKET client_socket) {
     DynamicParams params;
     ContentType content = { .type = "text/plain" };
 
+    printf("URL1: %s\n", url);
     parse_dynamic_params(url, &params);
-
-    for (int i = 0; i < 1; i++) {
-        printf("Key: %s, Value: %s\n", params.params[i].key, params.params[i].value);
-    }
+    printf("URL2: %s\n", url);
 
     build_file_path(url, file_path);
     printf("FILE PATH: %s\n", file_path);
