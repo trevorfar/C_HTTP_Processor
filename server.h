@@ -12,8 +12,6 @@ typedef struct {
     const char *type;
 } ContentType;
 
-
-
 void parse_dynamic_params(const char *url, DynamicParams *params);
 char *replace_placeholders(const char *template, const DynamicParams *params);
 void serve_dynamic_html(const char *file_path, SOCKET client_socket, const DynamicParams *params);
@@ -72,10 +70,8 @@ void remove_dynamic_tags(char *html) {
         fprintf(stderr, "Memory allocation failed.\n");
         return;
     }
-
     char *src = html;
     char *dst = result;
-
     while (*src) {
         if (*src == '{' && *(src + 1) == '{') {
             src += 2;  
@@ -122,15 +118,12 @@ void serve_dynamic_html(const char *file_path, SOCKET client_socket, const Dynam
 
     const char *response = replace_placeholders(template, params);
     free(template);
-
     char header[512];
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
     send(client_socket, header, strlen(header), 0);
+    printf("\n\n\nRESPONSE: %s\n\n\n", response);
     send(client_socket, response, strlen(response), 0);
 }
-
-
-
 
 const char *get_content_type(const char *ext) {
     if (strcmp(ext, ".html") == 0) return "text/html";
@@ -184,7 +177,6 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
         send(client_socket, buffer, bytesRead, 0);
         printf("CHUNK SENT: %zu bytes\n", bytesRead);
     }
-
     fclose(file);
     printf("FILE TRANSMISSION COMPLETE: %s\n", file_path);
 }
