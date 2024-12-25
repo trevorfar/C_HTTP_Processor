@@ -7,6 +7,7 @@
 
 #define BUFFER_SIZE 8192
 #define MAX_PATH_LEN 256
+const char *placeholders[2] = {"{{}}", "{{{}}}"};
 
 typedef struct {
     const char *type;
@@ -89,6 +90,8 @@ void remove_dynamic_tags(char *html) {
     free(result);
 }
 
+
+
 void serve_dynamic_html(const char *file_path, SOCKET client_socket, const DynamicParams *params) {
     FILE *file = fopen(file_path, "r");
     if (!file) {
@@ -112,16 +115,17 @@ void serve_dynamic_html(const char *file_path, SOCKET client_socket, const Dynam
 
     remove_extra_whitespace(template);
     sanitize_content(template);
-    if(params->count == 0){
-            remove_dynamic_tags(template);
-    }
-
+   
     const char *response = replace_placeholders(template, params);
+
+    // if(params->count == 0){
+    //         remove_dynamic_tags(response);
+    // }
+
     free(template);
     char header[512];
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
     send(client_socket, header, strlen(header), 0);
-    printf("\n\n\nRESPONSE: %s\n\n\n", response);
     send(client_socket, response, strlen(response), 0);
 }
 

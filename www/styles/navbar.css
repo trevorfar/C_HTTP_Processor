@@ -1,0 +1,30 @@
+.navbar-container {
+    background: #333;
+    color: #fff;
+    padding: 10px 20px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background: #222;
+    gap: 8px;
+}
+
+.navbar-container * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.navbar-container a { 
+    text-decoration: none;
+    color: #fff;
+}
+
+.navbar-container a:hover {
+    text-decoration: underline;
+}
+
+.navbar-container li {
+    list-style-type: none;
+}

@@ -12,31 +12,3 @@ body {
     padding: 20px;
 }
 
-#navbar {
-    background: #333;
-    color: #fff;
-    padding: 10px 20px;
-}
-
-#navbar-container {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    background: #222;
-    gap: 8px;
-}
-
-a { 
-    text-decoration: none;
-    color: #fff;
-}
-
-a:hover {
-    text-decoration: underline;
-}
-
-li {
-    list-style-type: none;
-
-}

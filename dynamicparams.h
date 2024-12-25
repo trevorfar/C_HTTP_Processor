@@ -16,6 +16,36 @@ typedef struct {
     int count;
 } DynamicParams;
 
+const char *component_placeholders[] = {"{{HEADER}}", "{{FOOTER}}", "{{NAVBAR}}"};
+const char *component_files[] = {"./www/shared/header.html", "./www/shared/footer.html", "./www/shared/navbar.html"};
+
+char *load_component(const char *file_path) {
+    FILE *file = fopen(file_path, "r");
+    if (!file) {
+        fprintf(stderr, "Component file not found: %s\n", file_path);
+        return NULL;
+    }
+
+    fseek(file, 0, SEEK_END);
+    size_t size = ftell(file);
+    rewind(file);
+
+    char *content = malloc(size + 1);
+    if (!content) {
+        fclose(file);
+        fprintf(stderr, "Memory allocation failed for component: %s\n", file_path);
+        return NULL;
+    }
+
+    fread(content, 1, size, file);
+    content[size] = '\0';
+    fclose(file);
+
+    printf("Loaded file: %s", content);
+    return content;
+}
+
+
 const char *next_delimiter(const char *str, const char *delimiters){
     const char *nearest = NULL;
     for(const char *d = delimiters; *d; d++){
@@ -109,6 +139,23 @@ char *replace_placeholders(const char *template, const DynamicParams *params) {
     static char result[BUFFER_SIZE * 2];
     strncpy(result, template, sizeof(result) - 1);
 
+    for (size_t i = 0; i < sizeof(component_placeholders) / sizeof(component_placeholders[0]); i++) {
+        char *component_content = load_component(component_files[i]);
+        if (component_content) {
+            char *pos = strstr(result, component_placeholders[i]);
+            if (pos) {
+                char temp[BUFFER_SIZE * 2];
+                snprintf(temp, sizeof(temp), "%.*s%s%s",
+                         (int)(pos - result), result,
+                         component_content, pos + strlen(component_placeholders[i]));
+                if (strlen(temp) < sizeof(result)) {
+                    strncpy(result, temp, sizeof(result) - 1);
+                }
+            }
+            free(component_content);
+        }
+    }
+
     for (int i = 0; i < params->count; i++) {
         char placeholder[MAX_PARAM_LEN + 4];
         snprintf(placeholder, sizeof(placeholder), "{{%s}}", params->params[i].key);
@@ -128,5 +175,6 @@ char *replace_placeholders(const char *template, const DynamicParams *params) {
             }
         }
     }
+
     return result;
 }
