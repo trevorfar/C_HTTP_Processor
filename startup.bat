@@ -1,6 +1,6 @@
 @echo off
 REM compile the server.c file
-gcc -o server server.c -lws2_32
+gcc server.c dynamicparams.c clean.c -o server -lws2_32 
 
 IF %ERRORLEVEL% NEQ 0 (
     echo Compilation failed!
