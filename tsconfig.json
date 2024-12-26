@@ -8,7 +8,7 @@
       "esModuleInterop": true,    // Allow module compatibility
       "skipLibCheck": true        // Skip checking types of imported libraries
     },
-    "include": ["www/**/*.ts"],    // Include your TypeScript files
+    "include": ["www/**/*.ts", "www/scripts/index.js"],    // Include your TypeScript files
     "exclude": ["node_modules", "www/dist", "**/*.d.ts"] // Exclude definitions & compiled files
   }
   

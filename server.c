@@ -107,15 +107,14 @@ void handle_request(const char *url, SOCKET client_socket) {
     ContentType content = { .type = "text/plain" };
 
     parse_dynamic_params(url, &params);    
-    printf("URL2: %s\n", url);
+    //websocket_printf(client_socket, "Server is running on port %d...\n", PORT);
 
     build_file_path(url, file_path);
-    printf("FILE PATH: %s\n", file_path);
-
+   // websocket_printf(client_socket, "FILE PATH: %s\n", file_path);
     char *ext = strrchr(file_path, '.');
     if (ext) {
         clean_extension(ext);
-        printf("FILE EXTENSION: %s\n", ext);
+       // websocket_printf(client_socket, "FILE EXTENSION: %s\n", ext);
         content.type = get_content_type(ext);
     }
 
@@ -133,7 +132,7 @@ void handle_client(void *socket) {
 
     recv(client_socket, buffer, sizeof(buffer), 0);
 
-    if (strstr(buffer, "Upgrade: websocket")) { // apparently this is how upgrades are detected, seems odd
+    if (strstr(buffer, "Upgrade: websocket")) {
         printf("WebSocket request detected\n");
         handle_websocket(client_socket, buffer);
     } else {
@@ -145,6 +144,7 @@ void handle_client(void *socket) {
     closesocket(client_socket);
     _endthread();
 }
+
 
 void handle_websocket(SOCKET client_socket, const char *headers){
     // need to grab websocket key
@@ -188,7 +188,7 @@ void handle_websocket(SOCKET client_socket, const char *headers){
 
 void websocket_communication_loop(SOCKET client_socket) {
     char recv_buffer[1024];
-    send_websocket_message(client_socket, "Welcome to the WebSocket server!");
+    send_websocket_message(client_socket, "Welcome to the WebSocket server :)");
 
     while (1) {
         int bytes_received = recv(client_socket, recv_buffer, sizeof(recv_buffer), 0);
@@ -282,7 +282,7 @@ int main() {
         return 1;
     }
 
-    printf("Server is running on port %d...\n", PORT);
+   // websocket_printf(INVALID_SOCKET, "Server is running on port %d...\n", PORT);
     clock_t end = clock();
     double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
     printf("Took %lfs to compile+run ", time_spent);
