@@ -18,7 +18,6 @@ void send_error_response(SOCKET client_socket, const char *message) {
     send(client_socket, response, strlen(response), 0);
 }
 
-
 char *custom_strndup(const char *str, size_t n) {
     char *dup = malloc(n + 1);
     if (dup) {
@@ -34,10 +33,8 @@ void serve_dynamic_html(const char *file_path, SOCKET client_socket, const Dynam
         send_error_response(client_socket, "404 Not Found");
         return;
     }
-
     remove_extra_whitespace(template);
     sanitize_content(template);
-   
     const char *response = replace_placeholders(template, params);
     char header[512];
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
@@ -100,21 +97,23 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
     printf("FILE TRANSMISSION COMPLETE: %s\n", file_path);
 }
 
-
 void handle_request(const char *url, SOCKET client_socket) {
     char file_path[MAX_PATH_LEN];
     DynamicParams params;
     ContentType content = { .type = "text/plain" };
 
-    parse_dynamic_params(url, &params);    
-    //websocket_printf(client_socket, "Server is running on port %d...\n", PORT);
+    parse_dynamic_params(url, &params);
+
+    // Parse headers and send to WebSocket
+    char headers[512];
+    snprintf(headers, sizeof(headers), "HTTP Headers: %s", url); // Simplified example
+    websocket_printf(client_socket, headers);
 
     build_file_path(url, file_path);
-   // websocket_printf(client_socket, "FILE PATH: %s\n", file_path);
+
     char *ext = strrchr(file_path, '.');
     if (ext) {
         clean_extension(ext);
-       // websocket_printf(client_socket, "FILE EXTENSION: %s\n", ext);
         content.type = get_content_type(ext);
     }
 
@@ -129,7 +128,6 @@ void handle_request(const char *url, SOCKET client_socket) {
 void handle_client(void *socket) {
     SOCKET client_socket = (SOCKET)socket;
     char buffer[1024] = {0};
-
     recv(client_socket, buffer, sizeof(buffer), 0);
 
     if (strstr(buffer, "Upgrade: websocket")) {
@@ -138,6 +136,8 @@ void handle_client(void *socket) {
     } else {
         char method[16], url[256];
         parse_request(buffer, method, url);
+        //websocket_printf(client_socket, "HTTP Request Headers:\n%s", buffer);
+        //send_websocket_message(client_socket, "Hey");
         handle_request(url, client_socket);
     }
 
@@ -145,7 +145,13 @@ void handle_client(void *socket) {
     _endthread();
 }
 
-
+void websocket_periodic_message(void *socket_ptr) {
+    SOCKET client_socket = (SOCKET)socket_ptr; // Cast the void* back to SOCKET
+    while (1) {
+        send_websocket_message(client_socket, "Periodic message from server");
+        Sleep(5000); // Send every 5 seconds
+    }
+}
 void handle_websocket(SOCKET client_socket, const char *headers){
     // need to grab websocket key
     const char *key_header = strstr(headers, "Sec-WebSocket-Key:");
@@ -179,12 +185,14 @@ void handle_websocket(SOCKET client_socket, const char *headers){
              "Sec-WebSocket-Accept: %s\r\n\r\n",
              accept_key);
     printf("Handshake Response Sent:\n%s\n", response);
-
+    _beginthread(websocket_periodic_message, 0, (void *)client_socket);
     send(client_socket, response, strlen(response), 0);
 
     printf("WebSocket handshake complete\n");
     websocket_communication_loop(client_socket);
 }
+
+
 
 void websocket_communication_loop(SOCKET client_socket) {
     char recv_buffer[1024];
