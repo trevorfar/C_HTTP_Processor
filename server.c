@@ -12,8 +12,6 @@
 
 const char *placeholders[2] = {"{{}}", "{{{}}}"};
 
-
-
 void send_error_response(SOCKET client_socket, const char *message) {
     char response[512];
     snprintf(response, sizeof(response), "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>%s</h1>", message);
@@ -101,6 +99,7 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
     fclose(file);
     printf("FILE TRANSMISSION COMPLETE: %s\n", file_path);
 }
+
 
 void handle_request(const char *url, SOCKET client_socket) {
     char file_path[MAX_PATH_LEN];
