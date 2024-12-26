@@ -4,11 +4,15 @@
 #include "server.h"
 #include "dynamicparams.h"
 #include "clean.h"
+#include <process.h>
+
 
 #pragma comment(lib, "ws2_32.lib")
 #define PORT 8080
 
 const char *placeholders[2] = {"{{}}", "{{{}}}"};
+
+
 
 void send_error_response(SOCKET client_socket, const char *message) {
     char response[512];
@@ -27,35 +31,21 @@ char *custom_strndup(const char *str, size_t n) {
 }
 
 void serve_dynamic_html(const char *file_path, SOCKET client_socket, const DynamicParams *params) {
-    FILE *file = fopen(file_path, "r");
-    if (!file) {
+    char *template = load_component(file_path);
+    if (!template) {
         send_error_response(client_socket, "404 Not Found");
         return;
     }
-
-    fseek(file, 0, SEEK_END);
-    size_t file_size = ftell(file);
-    rewind(file);
-
-    char *template = malloc(file_size + 1);
-    if (!template) {
-        fclose(file);
-        send_error_response(client_socket, "500 Internal Server Error");
-        return;
-    }
-    fread(template, 1, file_size, file);
-    template[file_size] = '\0';
-    fclose(file);
 
     remove_extra_whitespace(template);
     sanitize_content(template);
    
     const char *response = replace_placeholders(template, params);
-    free(template);
     char header[512];
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n");
     send(client_socket, header, strlen(header), 0);
     send(client_socket, response, strlen(response), 0);
+    free(template);
 }
 
 const char *get_content_type(const char *ext) {
@@ -101,7 +91,6 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
     char header[512];
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\n\r\n", content_type->type);
     send(client_socket, header, strlen(header), 0);
-    printf("HEADER SENT:\n%s", header);
 
     char buffer[BUFFER_SIZE];
     size_t bytesRead;
@@ -114,8 +103,6 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
 }
 
 void handle_request(const char *url, SOCKET client_socket) {
-    printf("REQUEST URL: %s\n", url);
-
     char file_path[MAX_PATH_LEN];
     DynamicParams params;
     ContentType content = { .type = "text/plain" };
@@ -140,6 +127,17 @@ void handle_request(const char *url, SOCKET client_socket) {
     }
 }
 
+
+void handle_client(void *socket) {
+    SOCKET client_socket = (SOCKET)socket;
+    char buffer[1024] = {0};
+    recv(client_socket, buffer, sizeof(buffer), 0);
+    char method[16], url[256];
+    parse_request(buffer, method, url);
+    handle_request(url, client_socket);
+    closesocket(client_socket);
+    _endthread();
+}
 
 int main() {
     clock_t begin = clock();
@@ -186,16 +184,8 @@ int main() {
     double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
     printf("Took %lfs to compile+run ", time_spent);
 
-    while ((new_socket = accept(server_fd, (struct sockaddr *)&address, &addrlen)) != INVALID_SOCKET) {
-        char buffer[1024] = {0};
-        recv(new_socket, buffer, sizeof(buffer), 0);
-        char method[16], url[256], response[2048] = {0};
-        parse_request(buffer, method, url);
-        handle_request(url, new_socket);
-
-
-        send(new_socket, response, strlen(response), 0);
-        closesocket(new_socket);
+     while ((new_socket = accept(server_fd, (struct sockaddr *)&address, &addrlen)) != INVALID_SOCKET) {
+        _beginthread(handle_client, 0, (void *)new_socket);
     }
 
     closesocket(server_fd);

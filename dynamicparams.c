@@ -2,12 +2,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include "dynamicparams.h"
+#include <ctype.h>
 
 const char *component_placeholders[] = {"{{HEADER}}", "{{FOOTER}}", "{{NAVBAR}}"};
 const char *component_files[] = {"./www/shared/header.html", "./www/shared/footer.html", "./www/shared/navbar.html"};
 
 char *load_component(const char *file_path) {
-    FILE *file = fopen(file_path, "r");
+    FILE *file = fopen(file_path, "rb");
     if (!file) {
         fprintf(stderr, "Component file not found: %s\n", file_path);
         return NULL;
@@ -25,10 +26,9 @@ char *load_component(const char *file_path) {
     }
 
     fread(content, 1, size, file);
-    content[size] = '\0';
     fclose(file);
-
-    printf("Loaded file: %s", content);
+    content[size] = '\0';
+    printf("\n\nLoaded file: %s\n\n", content);
     return content;
 }
 
