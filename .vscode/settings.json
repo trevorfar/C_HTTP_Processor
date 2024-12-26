@@ -1,5 +1,6 @@
 {
     "files.associations": {
         "file_cleanup.h": "c"
-    }
+    },
+    "git.ignoreLimitWarning": true
 }

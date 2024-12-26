@@ -13,8 +13,8 @@ typedef struct {
     unsigned char buffer[64];
 } SHA1_CTX;
 
-void sha1_init(SHA1_CTX *ctx);
-void sha1_update(SHA1_CTX *ctx, const unsigned char *data, size_t len);
-void sha1_final(SHA1_CTX *ctx, unsigned char hash[SHA1_BLOCK_SIZE]);
+extern void sha1_init(SHA1_CTX *ctx);
+extern void sha1_update(SHA1_CTX *ctx, const unsigned char *data, size_t len);
+extern void sha1_final(SHA1_CTX *ctx, unsigned char hash[SHA1_BLOCK_SIZE]);
 
 #endif

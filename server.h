@@ -25,3 +25,7 @@ void remove_dynamic_tags(char *html);
 void parse_request(const char *request, char *method, char *url);
 void build_file_path(const char *url, char *file_path);
 const char *get_content_type(const char *ext);
+void handle_websocket(SOCKET client_socket, const char *headers);
+void websocket_communication_loop(SOCKET client_socket);
+void send_websocket_message(SOCKET client_socket, const char *message);
+void websocket_printf(SOCKET client_socket, const char *format, ...);
