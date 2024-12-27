@@ -19,6 +19,9 @@ body {
 .navbar-container {
     background: #333;
     color: #fff;
+    position: sticky;
+    top: 20px;
+    margin: 0;
     border-radius: 16px;
     padding: 10px 20px;
     display: flex;
@@ -28,6 +31,7 @@ body {
     justify-content: center;
     background: #222;
     gap: 16px;
+    z-index: 10;
 }
 
 .navbar-container * {

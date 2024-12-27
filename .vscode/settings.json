@@ -2,5 +2,10 @@
     "files.associations": {
         "file_cleanup.h": "c"
     },
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    
+        "emmet.includeLanguages": {
+          "postcss": "css"
+        }
+      
 }

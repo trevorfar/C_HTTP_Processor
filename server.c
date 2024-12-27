@@ -7,11 +7,14 @@
 #include <process.h>
 #include "sha1.h"
 #include "base64.h"
+#include <windows.h>
 
 #pragma comment(lib, "ws2_32.lib")
 #define PORT 8080
 volatile int websocket_ready = 0;
 #define STD_OUT_ROW 100
+
+CRITICAL_SECTION buffer_lock;
 
 typedef struct {
     int specifier;
@@ -85,21 +88,33 @@ void build_file_path(const char *url, char *file_path) {
     }
 }
 
-void print_to_std_out(char *message) {
+void print_to_std_out(const char *message, char *title) {
+     for (int i = 0; i < STD_OUT_ROW; i++) {
+        if (strcmp(std_out_buffer[i].string, message) == 0 && std_out_buffer[i].serviced_yet == 0) {
+            LeaveCriticalSection(&buffer_lock);
+            return; 
+        }
+    }
+
+    EnterCriticalSection(&buffer_lock);
     static int next_slot = 0; 
-    snprintf(std_out_buffer[next_slot].string, sizeof(std_out_buffer[next_slot].string), "%s", message);
+    snprintf(std_out_buffer[next_slot].string, sizeof(std_out_buffer[next_slot].string), "%s %s", title, message);
     std_out_buffer[next_slot].specifier = 1;
     std_out_buffer[next_slot].serviced_yet = 0;
     next_slot = (next_slot + 1) % STD_OUT_ROW; 
+    LeaveCriticalSection(&buffer_lock);
 }
 
 void check_stdout_buffer(SOCKET client_socket){
+    EnterCriticalSection(&buffer_lock);
     for(int i = 0; i < STD_OUT_ROW; i++){
         if(std_out_buffer[i].specifier == 1 && std_out_buffer[i].serviced_yet == 0){
             send_websocket_message(client_socket, std_out_buffer[i].string);
             std_out_buffer[i].serviced_yet = 1;
         }
     }
+    LeaveCriticalSection(&buffer_lock);
+
 }
 
 void serve_file_chunked(const char *file_path, SOCKET client_socket, const ContentType *content_type) {
@@ -120,16 +135,12 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
 
         while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
             send(client_socket, buffer, bytesRead, 0);
-            printf("CHUNK SENT: %zu bytes\n", bytesRead);
-            char message[50];
-            snprintf(message, sizeof(message), "%zu", bytesRead);
-            print_to_std_out(message);
+            char bytes[50];
+            snprintf(bytes, sizeof(bytes), "\n%zu\n", bytesRead);
+            print_to_std_out(bytes, "Chunk Sent (bytes): ");
         }
         fclose(file);
-        char file_transmission[100];
-        snprintf(file_transmission, sizeof(file_transmission), "%s", file_path);
-        print_to_std_out(file_transmission); 
-        printf("FILE TRANSMISSION COMPLETE: %s\n", file_path);
+        print_to_std_out(file_path, "File Transmission complete: "); 
     }
 
 void handle_request(const char *url, SOCKET client_socket) {
@@ -139,14 +150,7 @@ void handle_request(const char *url, SOCKET client_socket) {
     ContentType content = { .type = "text/plain" };
 
     parse_dynamic_params(url, &params);
-
-    // Parse headers and send to WebSocket
-    char headers[512];
-    snprintf(headers, sizeof(headers), "HTTP Headers: %s", url); 
-    print_to_std_out(headers);
-
-    websocket_printf(client_socket, headers);
-
+    print_to_std_out(url, "HTTP Headers: ");
     build_file_path(url, file_path);
 
     char *ext = strrchr(file_path, '.');
@@ -174,9 +178,7 @@ void handle_client(void *socket) {
     } else {
         char method[16], url[256];
         parse_request(buffer, method, url);
-        char message[1024];
-        snprintf(message, sizeof(message), "HTTP Request Headers: %s", buffer);
-        print_to_std_out(message);
+        print_to_std_out(buffer, "HTTP Request Headers: ");
         handle_request(url, client_socket);
     }
 
@@ -258,16 +260,13 @@ void websocket_communication_loop(SOCKET client_socket) {
             printf("Close frame received\n");
             break;
         }
-
-        printf("Message from client: %s\n", &recv_buffer[2]);
-        send_websocket_message(client_socket, "Echo: Message received!");
     }
 }
 
 void send_websocket_message(SOCKET client_socket, const char *message) {
     size_t len = strlen(message);
     unsigned char frame[1024];
-    frame[0] = 0x81; // FIN bit set, text frame
+    frame[0] = 0x81; 
     frame[1] = (len <= 125) ? len : 126;
 
     size_t offset = 2;
@@ -282,18 +281,9 @@ void send_websocket_message(SOCKET client_socket, const char *message) {
     send(client_socket, (char *)frame, len + offset, 0);
 }
 
-void websocket_printf(SOCKET client_socket, const char *format, ...) {
-    char buffer[1024];
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-
-    printf("%s", buffer); // Log to console
-   // send_websocket_message(client_socket, buffer); // Send to WebSocket client
-}
-
 int main() {
+    InitializeCriticalSection(&buffer_lock);
+
     clock_t begin = clock();
     WSADATA wsa;
     SOCKET server_fd, new_socket;
@@ -346,4 +336,5 @@ int main() {
     WSACleanup();
     
     return 0;
+    DeleteCriticalSection(&buffer_lock);
 }
