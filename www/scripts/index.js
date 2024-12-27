@@ -7,9 +7,11 @@ ws.onmessage = function(event) {
     dataDiv.appendChild(newMessage);
 };
 
-ws.onopen = function() {
-    console.log('WebSocket connection established.');
+socket.onopen = () => {
+    console.log("WebSocket is open, sending 'ready' message.");
+    socket.send("ready");
 };
+
 
 ws.onclose = function() {
     console.log('WebSocket connection closed.');

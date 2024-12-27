@@ -10,6 +10,17 @@
 
 #pragma comment(lib, "ws2_32.lib")
 #define PORT 8080
+volatile int websocket_ready = 0;
+#define STD_OUT_ROW 100
+
+typedef struct {
+    int specifier;
+    int serviced_yet;
+    char string[1024];
+
+} StringWithSpecifier;
+
+StringWithSpecifier std_out_buffer[STD_OUT_ROW];
 
 const char *placeholders[2] = {"{{}}", "{{{}}}"};
 void send_error_response(SOCKET client_socket, const char *message) {
@@ -74,6 +85,23 @@ void build_file_path(const char *url, char *file_path) {
     }
 }
 
+void print_to_std_out(char *message) {
+    static int next_slot = 0; 
+    snprintf(std_out_buffer[next_slot].string, sizeof(std_out_buffer[next_slot].string), "%s", message);
+    std_out_buffer[next_slot].specifier = 1;
+    std_out_buffer[next_slot].serviced_yet = 0;
+    next_slot = (next_slot + 1) % STD_OUT_ROW; 
+}
+
+void check_stdout_buffer(SOCKET client_socket){
+    for(int i = 0; i < STD_OUT_ROW; i++){
+        if(std_out_buffer[i].specifier == 1 && std_out_buffer[i].serviced_yet == 0){
+            send_websocket_message(client_socket, std_out_buffer[i].string);
+            std_out_buffer[i].serviced_yet = 1;
+        }
+    }
+}
+
 void serve_file_chunked(const char *file_path, SOCKET client_socket, const ContentType *content_type) {
     FILE *file = fopen(file_path, "rb");
     if (!file) {
@@ -83,21 +111,29 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
         return;
     }
 
-    char header[512];
-    snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\n\r\n", content_type->type);
-    send(client_socket, header, strlen(header), 0);
+        char header[512];
+        snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: %s\r\n\r\n", content_type->type);
+        send(client_socket, header, strlen(header), 0);
 
-    char buffer[BUFFER_SIZE];
-    size_t bytesRead;
-    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        send(client_socket, buffer, bytesRead, 0);
-        printf("CHUNK SENT: %zu bytes\n", bytesRead);
+        char buffer[BUFFER_SIZE];
+        size_t bytesRead;
+
+        while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+            send(client_socket, buffer, bytesRead, 0);
+            printf("CHUNK SENT: %zu bytes\n", bytesRead);
+            char message[50];
+            snprintf(message, sizeof(message), "%zu", bytesRead);
+            print_to_std_out(message);
+        }
+        fclose(file);
+        char file_transmission[100];
+        snprintf(file_transmission, sizeof(file_transmission), "%s", file_path);
+        print_to_std_out(file_transmission); 
+        printf("FILE TRANSMISSION COMPLETE: %s\n", file_path);
     }
-    fclose(file);
-    printf("FILE TRANSMISSION COMPLETE: %s\n", file_path);
-}
 
 void handle_request(const char *url, SOCKET client_socket) {
+    
     char file_path[MAX_PATH_LEN];
     DynamicParams params;
     ContentType content = { .type = "text/plain" };
@@ -106,7 +142,9 @@ void handle_request(const char *url, SOCKET client_socket) {
 
     // Parse headers and send to WebSocket
     char headers[512];
-    snprintf(headers, sizeof(headers), "HTTP Headers: %s", url); // Simplified example
+    snprintf(headers, sizeof(headers), "HTTP Headers: %s", url); 
+    print_to_std_out(headers);
+
     websocket_printf(client_socket, headers);
 
     build_file_path(url, file_path);
@@ -116,7 +154,7 @@ void handle_request(const char *url, SOCKET client_socket) {
         clean_extension(ext);
         content.type = get_content_type(ext);
     }
-
+    
     if (strcmp(content.type, "text/html") == 0) {
         serve_dynamic_html(file_path, client_socket, &params);
     } else {
@@ -136,8 +174,9 @@ void handle_client(void *socket) {
     } else {
         char method[16], url[256];
         parse_request(buffer, method, url);
-        //websocket_printf(client_socket, "HTTP Request Headers:\n%s", buffer);
-        //send_websocket_message(client_socket, "Hey");
+        char message[1024];
+        snprintf(message, sizeof(message), "HTTP Request Headers: %s", buffer);
+        print_to_std_out(message);
         handle_request(url, client_socket);
     }
 
@@ -146,14 +185,17 @@ void handle_client(void *socket) {
 }
 
 void websocket_periodic_message(void *socket_ptr) {
-    SOCKET client_socket = (SOCKET)socket_ptr; // Cast the void* back to SOCKET
+    SOCKET client_socket = (SOCKET)socket_ptr; 
     while (1) {
-        send_websocket_message(client_socket, "Periodic message from server");
-        Sleep(5000); // Send every 5 seconds
+        check_stdout_buffer(client_socket);
+        Sleep(5000); 
     }
 }
+
+
+
 void handle_websocket(SOCKET client_socket, const char *headers){
-    // need to grab websocket key
+    
     const char *key_header = strstr(headers, "Sec-WebSocket-Key:");
     if(!key_header){
         printf("No websocket key");
@@ -161,7 +203,7 @@ void handle_websocket(SOCKET client_socket, const char *headers){
     }
     char sec_websocket_key[128];
     sscanf(key_header, "Sec-WebSocket-Key: %s", sec_websocket_key);
-    const char *guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"; // standard guid for websocket keys
+    const char *guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"; 
     char concatenated[256];
     snprintf(concatenated, sizeof(concatenated), "%s%s", sec_websocket_key, guid);
     
@@ -186,18 +228,19 @@ void handle_websocket(SOCKET client_socket, const char *headers){
              accept_key);
     printf("Handshake Response Sent:\n%s\n", response);
     _beginthread(websocket_periodic_message, 0, (void *)client_socket);
+    // _beginthread(check_std_out_buffer, 0, (void *)client_socket);
     send(client_socket, response, strlen(response), 0);
 
     printf("WebSocket handshake complete\n");
     websocket_communication_loop(client_socket);
+    websocket_ready = 1;
 }
 
 
 
 void websocket_communication_loop(SOCKET client_socket) {
     char recv_buffer[1024];
-    send_websocket_message(client_socket, "Welcome to the WebSocket server :)");
-
+    send_websocket_message(client_socket, "Welcome to the WebSocket server :)");    
     while (1) {
         int bytes_received = recv(client_socket, recv_buffer, sizeof(recv_buffer), 0);
         printf("Bytes received: %d, Data: %.*s\n", bytes_received, bytes_received, recv_buffer);
@@ -247,7 +290,7 @@ void websocket_printf(SOCKET client_socket, const char *format, ...) {
     va_end(args);
 
     printf("%s", buffer); // Log to console
-    send_websocket_message(client_socket, buffer); // Send to WebSocket client
+   // send_websocket_message(client_socket, buffer); // Send to WebSocket client
 }
 
 int main() {
