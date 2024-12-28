@@ -1,5 +1,6 @@
 let ws;
 let reconnectTimeout;
+let isReconnect = false;
 
 function initializeWebSocket() {
     if (ws && ws.readyState !== WebSocket.CLOSED) {
@@ -12,6 +13,12 @@ function initializeWebSocket() {
     ws.onopen = () => {
         console.log('WebSocket connection established');
         ws.send('WebSocket Ready');
+        if (isReconnect) {
+            ws.send('Reconnect Signal'); 
+        } else {
+            ws.send('WebSocket Ready'); 
+        }
+        isReconnect = true;
     };
 
     ws.onmessage = (event) => {

@@ -201,9 +201,6 @@ void handle_client(void *socket) {
         print_to_std_out(buffer, "HTTP Request Headers: ", client_socket);
         handle_request(url, client_socket);
     }
-    EnterCriticalSection(&buffer_lock);
-    LeaveCriticalSection(&buffer_lock);
-
     closesocket(client_socket);
     _endthread();
 }
@@ -220,7 +217,7 @@ void websocket_periodic_message(void *context_ptr) {
         check_stdout_buffer(context->client_socket);
     }
     printf("Periodic message thread terminated.\n");
-    free(context); // Free thread context
+    free(context); 
     _endthread();
 }
 
@@ -272,11 +269,76 @@ void handle_websocket(SOCKET client_socket, const char *headers){
     free(context);
 }
 
+char *decode_websocket_message(const unsigned char *buffer, size_t buffer_len) {
+    //This is chatgpt's not mine. The main idea is that web socket frames are all encoded by nature, 
+    // First byte: FIN bit, op code second is mask bit, payload length and a masking key
+    if (buffer_len < 2) {
+        printf("Incomplete frame\n");
+        return NULL;
+    }
+
+    unsigned char fin = buffer[0] & 0x80;
+    unsigned char opcode = buffer[0] & 0x0F; 
+    printf("FIN: %d, Opcode: %d\n", fin >> 7, opcode);
+
+    unsigned char mask = buffer[1] & 0x80; 
+    unsigned char payload_len = buffer[1] & 0x7F;
+
+    size_t offset = 2;
+    if (payload_len == 126) {
+        if (buffer_len < 4) {
+            printf("Incomplete frame\n");
+            return NULL;
+        }
+        payload_len = (buffer[2] << 8) | buffer[3];
+        offset += 2;
+    } else if (payload_len == 127) {
+        if (buffer_len < 10) {
+            printf("Incomplete frame\n");
+            return NULL;
+        }
+        payload_len = 0;
+        for (int i = 0; i < 8; i++) {
+            payload_len = (payload_len << 8) | buffer[offset + i];
+        }
+        offset += 8;
+    }
+
+    printf("Mask: %d, Payload Length: %zu\n", mask >> 7, payload_len);
+
+    if (mask && buffer_len < offset + 4 + payload_len) {
+        printf("Incomplete frame\n");
+        return NULL;
+    }
+
+    unsigned char masking_key[4] = {0};
+    if (mask) {
+        memcpy(masking_key, &buffer[offset], 4);
+        offset += 4;
+    }
+
+    unsigned char *decoded_payload = malloc(payload_len + 1);
+    if (!decoded_payload) {
+        printf("Memory allocation failed\n");
+        return NULL;
+    }
+
+    for (size_t i = 0; i < payload_len; i++) {
+        decoded_payload[i] = buffer[offset + i] ^ masking_key[i % 4];
+    }
+    decoded_payload[payload_len] = '\0'; 
+
+    printf("Decoded Payload: %s\n", decoded_payload);
+    return (char *)decoded_payload; 
+}
+
+
 
 
 void websocket_communication_loop(SOCKET client_socket) {
     char recv_buffer[1024];
-    send_websocket_message(client_socket, "Welcome to the WebSocket server :)");    
+    send_websocket_message(client_socket, "Welcome to the WebSocket server :)");  
+ 
     while (1) {
         int bytes_received = recv(client_socket, recv_buffer, sizeof(recv_buffer), 0);
         printf("Bytes received: %d, Data: %.*s\n", bytes_received, bytes_received, recv_buffer);
@@ -290,11 +352,24 @@ void websocket_communication_loop(SOCKET client_socket) {
             break;
         }
 
-        recv_buffer[bytes_received] = '\0'; 
         printf("Received WebSocket message: %s\n", recv_buffer);
+        char *decoded_message = decode_websocket_message((unsigned char *)recv_buffer, bytes_received);
+        if(!decoded_message){
+            printf("Error. Null buffer response");
+            continue;
+        }
 
-        if (strcmp(recv_buffer, "WebSocket Ready") == 0) {
+        if (strcmp(decoded_message, "WebSocket Ready") == 0) {
             printf("WebSocket is now ready\n");
+            continue;
+        }
+        
+        if(strcmp(decoded_message, "Reconnect Signal") == 0){
+            printf("RECONNECT SIGNAL");
+            for(int i = 0; i < STD_OUT_ROW; i++){
+                std_out_buffer[i].serviced_yet = 0;
+            }
+            check_stdout_buffer(client_socket);
             continue;
         }
 
@@ -369,12 +444,11 @@ int main() {
         return 1;
     }
 
-   // websocket_printf(INVALID_SOCKET, "Server is running on port %d...\n", PORT);
     clock_t end = clock();
     double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
     printf("Took %lfs to compile+run ", time_spent);
 
-     while ((new_socket = accept(server_fd, (struct sockaddr *)&address, &addrlen)) != INVALID_SOCKET) {
+     while ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) != INVALID_SOCKET) {
         _beginthread(handle_client, 0, (void *)new_socket);
 
     }
