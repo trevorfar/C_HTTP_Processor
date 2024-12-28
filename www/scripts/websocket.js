@@ -12,27 +12,34 @@ function initializeWebSocket() {
 
     ws.onopen = () => {
         console.log('WebSocket connection established');
-        ws.send('WebSocket Ready');
-        if (isReconnect) {
-            ws.send('Reconnect Signal'); 
-        } else {
-            ws.send('WebSocket Ready'); 
-        }
+        setTimeout(() => {
+            if (isReconnect) {
+                ws.send('Reconnect Signal');
+            } else {
+                ws.send('WebSocket Ready');
+            }
+        }, 100);
         isReconnect = true;
     };
 
     ws.onmessage = (event) => {
-        const outputDiv = document.getElementById('output');
-        if (!outputDiv) return;
-
-        const waitingMessage = document.querySelector('h1');
-        if (waitingMessage) {
-            outputDiv.removeChild(waitingMessage);
+        if(event.data === "Connection Acknowledged"){
+            console.log("server acknowledged")
+            return;
         }
-
-        const newMessage = document.createElement('p');
-        newMessage.textContent = event.data;
-        outputDiv.appendChild(newMessage);
+        else {
+            const outputDiv = document.getElementById('output');
+            if (!outputDiv) return;
+    
+            const waitingMessage = document.querySelector('h1');
+            if (waitingMessage) {
+                outputDiv.removeChild(waitingMessage);
+            }
+    
+            const newMessage = document.createElement('p');
+            newMessage.textContent = event.data;
+            outputDiv.appendChild(newMessage);
+        }
     };
 
     ws.onclose = () => {
@@ -60,4 +67,6 @@ function initializeWebSocket() {
     };
 }
 
-initializeWebSocket();
+document.addEventListener('DOMContentLoaded', () => {
+    initializeWebSocket();
+});

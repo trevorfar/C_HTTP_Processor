@@ -28,7 +28,7 @@ char *load_component(const char *file_path) {
     fread(content, 1, size, file);
     fclose(file);
     content[size] = '\0';
-    printf("\n\nLoaded file: %s\n\n", content);
+    //printf("\n\nLoaded file: %s\n\n", content);
     return content;
 }
 
@@ -48,7 +48,7 @@ void parse_dynamic_params(const char *url, DynamicParams *params) {
     params->count = 0;
     const char *query = strchr(url, '?');
     if (!query) {
-        printf("No query string found in URL.\n");
+        //printf("No query string found in URL.\n");
         return;
     }
     query++;  

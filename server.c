@@ -15,7 +15,6 @@
 #define STD_OUT_ROW 100
 
 CRITICAL_SECTION buffer_lock;
-volatile bool check_buffer_flag = false;
 
 typedef struct {
     int specifier;
@@ -87,10 +86,10 @@ void parse_request(const char *request, char *method, char *url) {
 
 void build_file_path(const char *url, char *file_path) {
     if(!url || !file_path){
-        fprintf(stderr, "No url or file_path provided !");
+        printf("No url or file_path provided");
         return;
     }
-
+    printf("URL: %s", url);
     const char *path_end = strchr(url, '?');
     if(path_end){
         char *temp = custom_strndup(url, path_end - url);
@@ -104,6 +103,7 @@ void build_file_path(const char *url, char *file_path) {
         }
     }
 }
+
 void check_stdout_buffer(SOCKET client_socket){
 
     EnterCriticalSection(&buffer_lock);
@@ -142,7 +142,6 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
     if (!file) {
         const char *notFound = "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n<h1>404 Page Not Found</h1>";
         printf("ERROR: File not found: %s\n", file_path);
-        send(client_socket, notFound, strlen(notFound), 0);
         return;
     }
 
@@ -258,7 +257,7 @@ void handle_websocket(SOCKET client_socket, const char *headers){
              "Connection: Upgrade\r\n"
              "Sec-WebSocket-Accept: %s\r\n\r\n",
              accept_key);
-    printf("Handshake Response Sent:\n%s\n", response);
+    //printf("Handshake Response Sent:\n%s\n", response);
     send(client_socket, response, strlen(response), 0);
     printf("WebSocket handshake complete\n");
     context->websocket_ready = true;
@@ -337,7 +336,8 @@ char *decode_websocket_message(const unsigned char *buffer, size_t buffer_len) {
 
 void websocket_communication_loop(SOCKET client_socket) {
     char recv_buffer[1024];
-    send_websocket_message(client_socket, "Welcome to the WebSocket server :)");  
+    send_websocket_message(client_socket, "Welcome to the WebSocket server :)");
+    send_websocket_message(client_socket, "Connection Acknowledged");  
  
     while (1) {
         int bytes_received = recv(client_socket, recv_buffer, sizeof(recv_buffer), 0);
@@ -360,16 +360,17 @@ void websocket_communication_loop(SOCKET client_socket) {
         }
 
         if (strcmp(decoded_message, "WebSocket Ready") == 0) {
+            //check_stdout_buffer(client_socket);
             printf("WebSocket is now ready\n");
             continue;
         }
-        
+
         if(strcmp(decoded_message, "Reconnect Signal") == 0){
-            printf("RECONNECT SIGNAL");
-            for(int i = 0; i < STD_OUT_ROW; i++){
-                std_out_buffer[i].serviced_yet = 0;
-            }
-            check_stdout_buffer(client_socket);
+            // printf("RECONNECT SIGNAL");
+            // for(int i = 0; i < STD_OUT_ROW; i++){
+            //     std_out_buffer[i].serviced_yet = 0;
+            // }
+            // check_stdout_buffer(client_socket);
             continue;
         }
 
