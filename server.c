@@ -8,13 +8,14 @@
 #include "sha1.h"
 #include "base64.h"
 #include <windows.h>
+#include <stdbool.h>
 
 #pragma comment(lib, "ws2_32.lib")
 #define PORT 8080
-volatile int websocket_ready = 0;
 #define STD_OUT_ROW 100
 
 CRITICAL_SECTION buffer_lock;
+volatile bool check_buffer_flag = false;
 
 typedef struct {
     int specifier;
@@ -23,6 +24,14 @@ typedef struct {
 
 } StringWithSpecifier;
 
+typedef struct {
+    SOCKET client_socket;
+    volatile bool terminate_thread;
+    volatile bool websocket_ready;
+} ThreadContext;
+
+HANDLE buffer_event;
+
 StringWithSpecifier std_out_buffer[STD_OUT_ROW];
 
 const char *placeholders[2] = {"{{}}", "{{{}}}"};
@@ -30,6 +39,14 @@ void send_error_response(SOCKET client_socket, const char *message) {
     char response[512];
     snprintf(response, sizeof(response), "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>%s</h1>", message);
     send(client_socket, response, strlen(response), 0);
+}
+
+void init_buffer_event() {
+    buffer_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+}
+
+void signal_buffer_event() {
+    SetEvent(buffer_event);
 }
 
 char *custom_strndup(const char *str, size_t n) {
@@ -87,25 +104,8 @@ void build_file_path(const char *url, char *file_path) {
         }
     }
 }
-
-void print_to_std_out(const char *message, char *title) {
-     for (int i = 0; i < STD_OUT_ROW; i++) {
-        if (strcmp(std_out_buffer[i].string, message) == 0 && std_out_buffer[i].serviced_yet == 0) {
-            LeaveCriticalSection(&buffer_lock);
-            return; 
-        }
-    }
-
-    EnterCriticalSection(&buffer_lock);
-    static int next_slot = 0; 
-    snprintf(std_out_buffer[next_slot].string, sizeof(std_out_buffer[next_slot].string), "%s %s", title, message);
-    std_out_buffer[next_slot].specifier = 1;
-    std_out_buffer[next_slot].serviced_yet = 0;
-    next_slot = (next_slot + 1) % STD_OUT_ROW; 
-    LeaveCriticalSection(&buffer_lock);
-}
-
 void check_stdout_buffer(SOCKET client_socket){
+
     EnterCriticalSection(&buffer_lock);
     for(int i = 0; i < STD_OUT_ROW; i++){
         if(std_out_buffer[i].specifier == 1 && std_out_buffer[i].serviced_yet == 0){
@@ -116,6 +116,26 @@ void check_stdout_buffer(SOCKET client_socket){
     LeaveCriticalSection(&buffer_lock);
 
 }
+
+void print_to_std_out(const char *message, char *title, SOCKET client_socket) {
+    EnterCriticalSection(&buffer_lock);
+     for (int i = 0; i < STD_OUT_ROW; i++) {
+        if (strcmp(std_out_buffer[i].string, message) == 0 && std_out_buffer[i].serviced_yet == 0) {
+            LeaveCriticalSection(&buffer_lock);
+            return; 
+        }
+    }
+
+    static int next_slot = 0; 
+    snprintf(std_out_buffer[next_slot].string, sizeof(std_out_buffer[next_slot].string), "%s %s", title, message);
+    std_out_buffer[next_slot].specifier = 1;
+    std_out_buffer[next_slot].serviced_yet = 0;
+    next_slot = (next_slot + 1) % STD_OUT_ROW; 
+    LeaveCriticalSection(&buffer_lock); 
+    signal_buffer_event();
+}
+
+
 
 void serve_file_chunked(const char *file_path, SOCKET client_socket, const ContentType *content_type) {
     FILE *file = fopen(file_path, "rb");
@@ -137,10 +157,10 @@ void serve_file_chunked(const char *file_path, SOCKET client_socket, const Conte
             send(client_socket, buffer, bytesRead, 0);
             char bytes[50];
             snprintf(bytes, sizeof(bytes), "\n%zu\n", bytesRead);
-            print_to_std_out(bytes, "Chunk Sent (bytes): ");
+            print_to_std_out(bytes, "Chunk Sent (bytes): ", client_socket);
         }
         fclose(file);
-        print_to_std_out(file_path, "File Transmission complete: "); 
+        print_to_std_out(file_path, "File Transmission complete: ", client_socket); 
     }
 
 void handle_request(const char *url, SOCKET client_socket) {
@@ -150,7 +170,7 @@ void handle_request(const char *url, SOCKET client_socket) {
     ContentType content = { .type = "text/plain" };
 
     parse_dynamic_params(url, &params);
-    print_to_std_out(url, "HTTP Headers: ");
+    print_to_std_out(url, "HTTP Headers: ", client_socket);
     build_file_path(url, file_path);
 
     char *ext = strrchr(file_path, '.');
@@ -178,26 +198,39 @@ void handle_client(void *socket) {
     } else {
         char method[16], url[256];
         parse_request(buffer, method, url);
-        print_to_std_out(buffer, "HTTP Request Headers: ");
+        print_to_std_out(buffer, "HTTP Request Headers: ", client_socket);
         handle_request(url, client_socket);
     }
+    EnterCriticalSection(&buffer_lock);
+    LeaveCriticalSection(&buffer_lock);
 
     closesocket(client_socket);
     _endthread();
 }
 
-void websocket_periodic_message(void *socket_ptr) {
-    SOCKET client_socket = (SOCKET)socket_ptr; 
-    while (1) {
-        check_stdout_buffer(client_socket);
-        Sleep(5000); 
+void check_stdout_buffer_thread(void *param) {
+    SOCKET client_socket = (SOCKET)param;
+
+}
+
+void websocket_periodic_message(void *context_ptr) {
+    ThreadContext *context = (ThreadContext *)context_ptr;
+    while (!context->terminate_thread) {
+        WaitForSingleObject(buffer_event, INFINITE);
+        check_stdout_buffer(context->client_socket);
     }
+    printf("Periodic message thread terminated.\n");
+    free(context); // Free thread context
+    _endthread();
 }
 
 
 
 void handle_websocket(SOCKET client_socket, const char *headers){
-    
+    ThreadContext *context = malloc(sizeof(ThreadContext));
+    context->client_socket = client_socket;
+    context->terminate_thread = false;
+    context->websocket_ready = false;
     const char *key_header = strstr(headers, "Sec-WebSocket-Key:");
     if(!key_header){
         printf("No websocket key");
@@ -229,13 +262,14 @@ void handle_websocket(SOCKET client_socket, const char *headers){
              "Sec-WebSocket-Accept: %s\r\n\r\n",
              accept_key);
     printf("Handshake Response Sent:\n%s\n", response);
-    _beginthread(websocket_periodic_message, 0, (void *)client_socket);
-    // _beginthread(check_std_out_buffer, 0, (void *)client_socket);
     send(client_socket, response, strlen(response), 0);
-
     printf("WebSocket handshake complete\n");
+    context->websocket_ready = true;
+    _beginthread(websocket_periodic_message, 0, (void *)context);
     websocket_communication_loop(client_socket);
-    websocket_ready = 1;
+    context->terminate_thread = true; 
+    closesocket(client_socket);
+    free(context);
 }
 
 
@@ -246,6 +280,7 @@ void websocket_communication_loop(SOCKET client_socket) {
     while (1) {
         int bytes_received = recv(client_socket, recv_buffer, sizeof(recv_buffer), 0);
         printf("Bytes received: %d, Data: %.*s\n", bytes_received, bytes_received, recv_buffer);
+
         if (bytes_received == -1) {
             printf("recv() failed with error: %d\n", WSAGetLastError());
             break;
@@ -255,12 +290,24 @@ void websocket_communication_loop(SOCKET client_socket) {
             break;
         }
 
+        recv_buffer[bytes_received] = '\0'; 
+        printf("Received WebSocket message: %s\n", recv_buffer);
+
+        if (strcmp(recv_buffer, "WebSocket Ready") == 0) {
+            printf("WebSocket is now ready\n");
+            continue;
+        }
+
         unsigned char opcode = recv_buffer[0] & 0x0F;
         if (opcode == 0x8) { // Close frame
             printf("Close frame received\n");
             break;
         }
     }
+    printf("WebSocket connection cleaned up\n");
+    ResetEvent(buffer_event);
+    closesocket(client_socket);
+
 }
 
 void send_websocket_message(SOCKET client_socket, const char *message) {
@@ -283,7 +330,6 @@ void send_websocket_message(SOCKET client_socket, const char *message) {
 
 int main() {
     InitializeCriticalSection(&buffer_lock);
-
     clock_t begin = clock();
     WSADATA wsa;
     SOCKET server_fd, new_socket;
@@ -330,11 +376,13 @@ int main() {
 
      while ((new_socket = accept(server_fd, (struct sockaddr *)&address, &addrlen)) != INVALID_SOCKET) {
         _beginthread(handle_client, 0, (void *)new_socket);
+
     }
 
     closesocket(server_fd);
     WSACleanup();
     
-    return 0;
     DeleteCriticalSection(&buffer_lock);
+    return 0;
+
 }

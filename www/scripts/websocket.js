@@ -1,7 +1,8 @@
 let ws;
+let reconnectTimeout;
 
 function initializeWebSocket() {
-    if (ws) {
+    if (ws && ws.readyState !== WebSocket.CLOSED) {
         console.log('WebSocket already initialized');
         return;
     }
@@ -10,34 +11,45 @@ function initializeWebSocket() {
 
     ws.onopen = () => {
         console.log('WebSocket connection established');
-        
-        ws.send('ready');
+        ws.send('WebSocket Ready');
     };
 
     ws.onmessage = (event) => {
         const outputDiv = document.getElementById('output');
+        if (!outputDiv) return;
+
         const waitingMessage = document.querySelector('h1');
-        if(waitingMessage){
+        if (waitingMessage) {
             outputDiv.removeChild(waitingMessage);
         }
-        if (outputDiv) {
-            const newMessage = document.createElement('p');
-            newMessage.textContent = event.data;
-            outputDiv.appendChild(newMessage);
-        }
+
+        const newMessage = document.createElement('p');
+        newMessage.textContent = event.data;
+        outputDiv.appendChild(newMessage);
     };
 
     ws.onclose = () => {
         console.log('WebSocket connection closed. Attempting to reconnect...');
-        setTimeout(() => {
-            ws = null; 
-            initializeWebSocket(); 
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(() => {
+            ws = null;
+            initializeWebSocket();
         }, 5000);
+
+        const outputDiv = document.getElementById('output');
+        if (!outputDiv) return;
+
+        const waitingMessage = document.querySelector('h1');
         if (!waitingMessage) {
             const newWaitingMessage = document.createElement('h1');
             newWaitingMessage.textContent = "Waiting for data...";
             outputDiv.appendChild(newWaitingMessage);
         }
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket encountered an error:', error);
+        ws.close();
     };
 }
 
